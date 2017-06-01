@@ -4,21 +4,23 @@
 // 
 // This program simulates a 2D Ising magnet using single- and cluster moves.
 // 
-// Things that should be fixed:
+// Things that should be fixed or coniddered:
 //		
 //		x Ambiguous ordering of neighbouring nodes
 //		x Using vectors or single value types for neighbours
-// 
+//		x Energy reconsideration rather than recalculation for cluster moves
+//		x The boolean free variable could be eliminate with immiate flips
+//
 // ---------------------------------------------------------------------------------
 //
 
-#include <iostream>
-#include <fstream>	
-#include <vector>
-#include <random>
-#include <cmath>
-#include <sstream>
-#include <iomanip>
+#include <iostream>				// for basic inout output
+#include <fstream>				// for read/write to files
+#include <vector>				// for vector template functionallity
+#include <random>				// for random distributions and generators
+#include <cmath>				// for mathematical functions
+#include <sstream>				// for creating namestrings
+#include <iomanip>				// for formating output strings
 
 using namespace std;
 
@@ -42,18 +44,18 @@ class magnet					// class for the magnet
 		int poy;				// y position
 		int spin;				// spin number
 		double energy;			// energy of node
-		double entop = 0;
-		double enlft = 0;
-		double enrgt = 0;
-		double enbot = 0;
-		node* top;
-		node* lft;
-		node* rgt;
-		node* bot;
-		vector <node*> nears;	// a list of references to all neighbours, declared in findnear();
-		bool free;
+		double entop = 0;		// energy to top neighbour
+		double enlft = 0;		// energy to left neighbour
+		double enrgt = 0;		// energy to right neighbour
+		double enbot = 0;		// energy to bottom neighbour
+		node* top;				// pointer to top neigh
+		node* lft;				// pointer to left neigh
+		node* rgt;				// pointer to right neigh
+		node* bot;				// pointer to bot neigh
+		vector <node*> nears;	// a list of references to all neighbours
+		bool free;				// was node already visited by algorithm
 
-		void nodeenergy() {energy = entop+enlft+enrgt+enbot;}
+		void nodeenergy() {energy = entop+enlft+enrgt+enbot;} // calcs node energy
 
 		// public section
 		public:
@@ -70,7 +72,7 @@ class magnet					// class for the magnet
 	int ysize;								// number of nodes in y direction
 	int size;								// total size
 	double energy;							// energy of magnet
-	double M = 0;
+	double M = 0;							// mangentization
 	double J;								// interaction energy
 	double T;								// temperature
 	
@@ -83,38 +85,39 @@ class magnet					// class for the magnet
 	// function members
 	void makegrid();					// set up grid of nodes
 	void findnear();					// find all neighbours
-	void magnetize(mt19937&,float);
-	void magnetizemin();
-	int metropolis(mt19937&);
-	double pairenergy(node*,node*);
-	void calcenergy();
-	void wolffcluster(mt19937&);
-	void addnode(node*,vector<node*>*,mt19937&,bernoulli_distribution&,int);
-	void updatenode(node*,double,double,double,double);
-	void correlation(int);
-	void calcmagnetization();
-	void zeroenergies();
-	void nodedist();
-	int getspin(int);
-	int getmag();
-	void setcorrvec(int);
+	void magnetize(mt19937&,float);		// set magnetization
+	void magnetizemax();				// set maximum energy magnetization
+	int metropolis(mt19937&);			// metropolis algorithm
+	double pairenergy(node*,node*);		// returns energy between two nodes
+	void calcenergy();					// calculates total energy of magnet
+	void wolffcluster(mt19937&);		// wolff's algorithm
+	void addnode(node*,vector<node*>*,
+		 mt19937&,bernoulli_distribution&,int);	// add node to cluster
+	void updatenode(node*,double,double,double,double);	// update energy on node
+	void correlation(int);				// calculate correlation 
+	void calcmagnetization();			// calculate magnetization
+	void zeroenergies();				// set all energies to zero
+	void nodedist();					// prond node distribution
+	int getspin(int);					// get spin of node
+	int getmag();						// returns magnetization
+	void setcorrvec(int);				// build correlation vector
 	void printpos(int);					// accessor for getting position
-	void printnear(int);
-	void printenergy();
-	void printenergynode(int);
-	void writeenergy(ofstream&);
-	void writenodes(ofstream&);
-	void writecluster(vector<node*>*,ofstream&);
-	void writeimage(int,int);
-	void writecorr(int);
-	void writemag(ofstream&);
+	void printnear(int);				// accessor for getting neigh
+	void printenergy();					// prints energy
+	void printenergynode(int);			// prints node energy
+	void writeenergy(ofstream&);		// writes energy to file
+	void writenodes(ofstream&);			// writes node distribution to file
+	void writecluster(vector<node*>*,ofstream&);	// writes cluster to file
+	void writeimage(int,int);			// write image of node distribution
+	void writecorr(int);				// write correlations to file
+	void writemag(ofstream&);			// write magnetization to file
 
 	// constructor
 	magnet(int ixsize, int iysize, double iJ, double iT)
 		: xsize(ixsize), ysize(iysize), J(iJ), T(iT)
 	{
-		size = xsize*ysize;
-		nodes.reserve(size);					// vector of all nodes	
+		size = xsize*ysize;						// calculate number of nodes
+		nodes.reserve(size);					// set size of node vector	
 	}
 };
 
@@ -124,7 +127,7 @@ class magnet					// class for the magnet
 //-------------------------------------------------------------
 
 
-void magnet::node::setpos(int x, int y, int i)	// accessor for setting position
+void magnet::node::setpos(int x, int y, int i)
 {
 	pox = x; poy = y; index = i;
 }
@@ -155,7 +158,7 @@ void magnet::printnear(int n)
 	cout << "top: " << anode.top->index << " left: " << anode.lft->index << " right: " << anode.rgt->index << " bot: " << anode.bot->index << endl;
 }
 
-void magnet::printpos(int n)						// accessor for getting position
+void magnet::printpos(int n)					
 {	
 	node anode = nodes[n];
 	cout << "index: " << anode.index << endl <<  "position: (" << anode.pox << ","	<< anode.poy << ")" << endl;
@@ -205,9 +208,9 @@ void magnet::writemag(ofstream& fs)
 	fs << M << endl;
 }
 
-
 void magnet::writeimage(int n,int m)
 {
+	// create file name of fixed size
 	ostringstream namestream;
 	namestream << "image" << setfill('0') << setw(m) << n << ".pbm";
 	string filename = namestream.str();
@@ -215,10 +218,12 @@ void magnet::writeimage(int n,int m)
 	ofstream imgstream;
 	imgstream.open(filename);
 
-	imgstream << "P1" << endl << xsize << " " << ysize << endl;
+	// set pbm header
+	imgstream << "P1" << endl << xsize << " " << ysize << endl;	
 
+	// build pbm image
 	int index = 0;
-	for(int irow = 0; irow < ysize; irow++)
+	for(int irow = 0; irow < ysize; irow++)	
 		for (int icol = 0; icol < xsize; icol++)
 		{
 			index = irow*xsize + icol;
@@ -273,6 +278,7 @@ void magnet::findnear()
 			if (y == cols - 1)
 				periodicright = -cols;
 
+			// for debugging
 			//cout << "node  " << i << endl;
 			//cout << "left  " << i-1 + periodicleft << endl;
 			//cout << "right " << i+1 + periodicright << endl;
@@ -288,15 +294,11 @@ void magnet::findnear()
 	for (auto& el : nodes)
 	{
 		el.nears = {el.top,el.lft,el.rgt,el.bot};
-		//el.nears = {el.rgt,el.bot};
 	}
 }
 
 void magnet::magnetize(mt19937& gen, float bias)
 {
-	//random_device rdd;
-	//mt19937 genn(rdd());
-	
 	bernoulli_distribution randspin(bias);
 	for (auto& el : nodes)
 	{
@@ -305,11 +307,8 @@ void magnet::magnetize(mt19937& gen, float bias)
 	}
 }
 
-void magnet::magnetizemin()
+void magnet::magnetizemax()
 {
-	//random_device rdd;
-	//mt19937 genn(rdd());
-	
 	for (auto& el : nodes)
 	{
 		el.index % 2 ? el.spin = 1 : el.spin = -1;
@@ -367,20 +366,14 @@ double magnet::pairenergy(node* node1, node* node2)
 
 void magnet::calcenergy()
 {
+	// calculate energy with forward neighbours
 	for (auto& el : nodes)
 	{
 		double enrgt = pairenergy(&el,el.rgt);
 		double enbot = pairenergy(&el,el.bot);
 
-		//el.energy += enrgt;
-		//el.energy += enbot;
-		//el.rgt->energy += enrgt;
-		//el.bot->energy += enbot;
-		
 		el.enrgt = enrgt;
 		el.enbot = enbot;
-		//el.rgt->enlft = enrgt;
-		//el.bot->entop = enbot;
 	}
 
 	for (auto& el : nodes)
@@ -442,30 +435,20 @@ int magnet::metropolis(mt19937& gen)
 	double enlft = pairenergy(rand,lft);
 	double enrgt = pairenergy(rand,rgt);
 
-	//updatenode(rand,0,enbot,0,enrgt);
 	updatenode(rand,entop,enbot,enlft,enrgt);
 
 	double newnodeen = (entop + enbot + enlft + enrgt);
-	//double newnodeen = (enrgt + enbot);
 	double nodediff = (newnodeen - oldnodeen );
 
 	energy = olden + nodediff;
-	//calcenergy();
 
-	//double endiff = energy - olden;
-		
 	double prob = 1.0 - exp(-nodediff/(kb*T));
 	bernoulli_distribution acc(prob);
 
-	//cout << "endiff " << endiff << endl;
-	//cout << "prob: " << prob << endl;
-	
 	if (nodediff < 0)
 		return 1;
-		//{cout << "accepted " << prob << endl; return 1;}
 	else if (acc(gen))
 		return 1;
-		//{cout << "metrepted " << prob << endl; return 1;}
 	else
 	{
 		energy = olden;
@@ -473,21 +456,13 @@ int magnet::metropolis(mt19937& gen)
 		updatenode(rand,oldentop,oldenbot,oldenlft,oldenrgt);
 		return 0;
 	}
-		//{cout << "rejected " << prob << endl; energy = olden; rand->spin = oldspin; return 0;}
 }
 
 
 void magnet::addnode(node* anode, vector<node*>* cluster, mt19937& gen, bernoulli_distribution& dist, int spin)
 {
-	//bool p = dist(gen);
-	
-	//cout << "free? " << anode->free << endl << "spin: " << anode->spin << " " << spin << endl << "prob " << p << endl;
-	
-	//if (!(anode->free) && anode->spin == spin && p)
-	
 	if (anode->free && anode->spin == spin && dist(gen))
 	{
-		//gbug++;
 		anode->free = false;
 		(*cluster).push_back(anode);
 		
@@ -500,51 +475,34 @@ void magnet::addnode(node* anode, vector<node*>* cluster, mt19937& gen, bernoull
 
 void magnet::wolffcluster(mt19937& gen)
 {
-	for (auto& el : nodes)					// reset cluster
+	// reset cluster state
+	for (auto& el : nodes)
 		el.free = true;
 	
-	uniform_int_distribution<> randnode (0,nodes.size()-1);		// dist for chosing random node
+	uniform_int_distribution<> randnode (0,nodes.size()-1);	
 
-	unsigned int n = randnode(gen);			// a random node
-	node* rand = &nodes[n];					// increase readability
-	int spin = rand->spin;					// store spin
+	unsigned int n = randnode(gen);		
+	node* rand = &nodes[n];					
+	int spin = rand->spin;					
 
-	//cout << "randomly picked node " << n << " with spin " << spin << endl;
-
-	vector <node*> cluster;					// vector to hold cluster
-	cluster.reserve(static_cast<unsigned int>(sqrt(nodes.size())));	// estimate size
-
-	double accprob = 1 - exp(-2*J/(kb*T));
-	//double accprob = 0.4;
-
-	//double tmp = pairenergy(&nodes[n],&nodes[n+10]);
-	//cout << nodes[n].spin << " " << nodes[n+10].spin << " " << tmp <<  endl;
+	// construct temporary cluster vector
+	vector <node*> cluster;					
+	cluster.reserve(static_cast<unsigned int>(sqrt(nodes.size())));
 	
-	//double accprob = 0.9;
-	//cout << "accprob " << accprob << endl;
+	double accprob = 1 - exp(-2*J/(kb*T));
 
 	bernoulli_distribution  dist (accprob);
 	
-	//gbug = 0;
 	addnode(rand,&cluster,gen,dist,spin);
 	
-	ofstream fs;
-	fs.open("cluster.csv");
-	writecluster(&cluster,fs);
-	fs.close();
+	// uncomment to write cluster to file
+	//ofstream fs;
+	//fs.open("cluster.csv");
+	//writecluster(&cluster,fs);
+	//fs.close();
 
 	for (auto& el : cluster)
 		el->spin = -spin;
-	
-
-	//nodedist();
-	//printenergy();
-
-	//for (auto& el : cluster)
-	//	printpos(el->index);
-	
-	//cout << "in cluster: " << gbug << endl;
-	//gbug = 0;
 }
 
 void magnet::correlation(int n)
@@ -556,102 +514,92 @@ void magnet::correlation(int n)
 }
 
 int main()
-//int main(int argc, char** argv)
 {	
-	//argc++; argc--;					// ugly hack to placiate clang...
-	//int xsize = atoi(argv[1]);		// horezontal atoms
-	//int ysize = atoi(argv[1]);		// horezontal atoms
-	//int corrindex = atoi(argv[2]);
+	int xsize = 512;				// horezontal atoms
+	int ysize = 512;				// vertical atoms
+	double T = 300;					// temperature
+	double J = 0.0175;				// interaction energy of the ising model	
+	float bias = 0.5;				// statistical bias in the spin distribution
+	int steps = 10000;				// timesteps
+	int count = 0;					// for acceptance probability
+	int corrindex = 0;				// usd by correlation function
+	int digits = to_string(steps+1).length();	// for file name
+	bool usemetro = false;			// for using metropolis
+	bool usewolff = true;			// for using wolff's
 
-	//corrindex < (double)xsize/2 ? cout << "calculating correlation at " << corrindex << endl
-	//	: cout << "warning: correlation check longer than width " << endl;
-	
-	int xsize = 512;		// horezontal atoms
-	int ysize = 512;		// vertical atoms
-	double T = 300;			// temperature
-	//double J = kb*T;		// interaction energy of the ising model
-	double J = 0.0175;		// interaction energy of the ising model		// 0.0175
-	float bias = 0.5;		// statistical bias in the spin distribution
-	int steps = 1;
-	//int count = 0;
-	int corrindex = 0;
-	int digits = to_string(steps+1).length();
+	magnet ising(xsize,ysize,J,T);		// initialize magnet
 
-	magnet ising(xsize,ysize,J,T);	// initialize magnet
+	ising.setcorrvec(floor(xsize/2.0));	// create correlation vector
 
-	ising.setcorrvec(floor(xsize/2.0));
+	random_device rd;				// using unix random device for seeding
+	mt19937 gen(rd());				// Mersenne Twister as RNG
 
-	random_device rd;		// using unix random device as seed
-	mt19937 gen(rd());		// Mersenne Twister as RNG
+	ising.makegrid();				// set up grid
+	ising.findnear();				// identify neibghbours
+	ising.magnetize(gen,bias);		// magnetize with bias
+	//ising.magnetizemax();			// maximize energy
 
-	ising.makegrid();		// 
-	ising.findnear();
-	ising.magnetize(gen,bias);
-	//ising.magnetizemin();
+	ising.zeroenergies();			// initialize energies as zero
+	ising.calcenergy();				// calculate initial enrgies
+	ising.calcmagnetization();		// calculate initial magnetization
 
-	ising.zeroenergies();
-	ising.calcenergy();
-	ising.calcmagnetization();
+	ising.writeimage(0,digits);		// write initial magnetization image
 
-	//cout << "energy before " << endl;
-	//ising.printenergy();
-	//cout << "initial nodedist " << endl;
-	//ising.nodedist();
-	
-	ising.writeimage(0,digits);
-
-	//ofstream nodestream;
-	//nodestream.open("nodes.csv");
-	//ising.writenodes(nodestream);
-	//nodestream.close();
-
-	ofstream energystream;
+	ofstream energystream;			
 	energystream.open("energy.dat");
-	ising.writeenergy(energystream);
+	ising.writeenergy(energystream);	// write initial energies
 	
 	ofstream magstream;
 	magstream.open("magnetization.dat");
-	ising.writemag(magstream);
+	ising.writemag(magstream);			// write initial magnetization
 
-	//for (int k = 0; k < steps; k++)
-	//{
-		//count += ising.metropolis(gen);
-	//	ising.metropolis(gen);
-		
-	//	if(!(k % 100))
-	//	{
-	//		ising.writeenergy(energystream);
-	//		ising.writeimage(k+1,digits);
-	//		ising.correlation(corrindex);
-	//		ising.calcmagnetization();
-	//		ising.writemag(magstream);
-	//	}
-	//}
 
-	//double accprob = (float)count / (float)steps;
-	//cout << "acceptance prob: " << accprob << endl;
-
-	for (int k = 0; k < steps; k++)
+	if (usemetro)						// run metropolis algorithm
 	{
-		ising.wolffcluster(gen);
-		ising.calcenergy();
-		ising.writeenergy(energystream);
-		ising.writeimage(k+1,digits);
-		ising.correlation(corrindex);
-		ising.calcmagnetization();
-		ising.writemag(magstream);
+		for (int k = 0; k < steps; k++)
+		{
+			count += ising.metropolis(gen);
+			ising.metropolis(gen);
+		  
+			if(!(k % 100))
+			{
+				ising.writeenergy(energystream);
+				ising.writeimage(k+1,digits);
+				ising.correlation(corrindex);
+				ising.calcmagnetization();
+				ising.writemag(magstream);
+			}
+		}
+
+		double accprob = (float)count / (float)steps;
+		cout << "acceptance prob: " << accprob << endl;
 	}
 
+	if (usewolff)					// run wolff's algorithm
+	{
+		for (int k = 0; k < steps; k++)
+		{
+			ising.wolffcluster(gen);
+			ising.calcenergy();
+			ising.writeenergy(energystream);
+			ising.writeimage(k+1,digits);
+			ising.correlation(corrindex);
+			ising.calcmagnetization();
+			ising.writemag(magstream);
+		}
+	}
+
+	//close streams
 	energystream.close();
 	magstream.close();
 
 	ising.writecorr(steps);
 
-	//cout << "energy after " << endl;
-	//ising.printenergy();
+	// for diagnostic purposes
 	cout << "final nodedist " << endl;
 	ising.nodedist();
 	
+	//write final node distribution
 	ofstream nodestream;
 	nodestream.open("nodes.csv");
 	ising.writenodes(nodestream);
